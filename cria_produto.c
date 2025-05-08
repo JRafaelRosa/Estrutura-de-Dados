@@ -5,12 +5,178 @@
 #include <time.h>
 #include <windows.h>
 #include <locale.h>
+#include <sys/stat.h>
+#include <stdbool.h>
 
 #ifndef QUANT
-#define QUANT 100
+#define QUANT 10000
 #endif
 
-void verifica_data(int* dia, int* mes, int* ano) {
+
+
+typedef struct Produto Produto;
+typedef struct Raiz Raiz;
+typedef struct Lista Lista;
+
+typedef struct Data
+{
+    int dia;
+    int mes;
+    int ano;
+} Data;
+
+struct Produto
+{
+    Data data;
+    char* nome;
+    int codigo;
+    float preco;
+    int vendas;
+    int quant;
+    struct Produto* prox;
+};
+
+struct Raiz
+{
+    Produto produto;
+    int altura;
+    struct Raiz* esquerda;
+    struct Raiz* direita;
+};
+
+struct Lista
+{
+    struct Raiz* produto;
+    struct Lista* proximo;
+};
+
+void verifica_data(int* dia, int* mes, int* ano);
+void visualizar_produtos(char prod[][50], int total);
+int altura(Raiz* node);
+int altura_maxima(int a, int b);
+Raiz* criar_raiz(Produto* prod);
+int compara_data(int dia, int mes, int ano, int Rdia, int Rmes, int Rano);
+int balanceamento(Raiz* node) ;
+Raiz* rotacao_direita(Raiz* y);
+Raiz* rotacao_esquerda(Raiz* x);
+Raiz* inserir(Raiz* node, Produto* prod);
+void visualizar_vendas(Raiz* node, int* ultimo_ano);
+Lista* buscar_produto(Raiz* node, int dia, int mes, int ano, int* vendas);
+void menu(char prod[][50], int iprod, FILE* compras, Raiz* produto);
+void liberar(Raiz* node);
+
+int main(int argc, char *argv[])
+{
+    setlocale(LC_ALL, "portuguese");
+
+    Raiz* node = NULL;
+    FILE *i, *compras;
+    char prod[150][50];
+    int cod = 1, iprod = 0, cont = 0, quant = QUANT;
+    char linha[200];
+
+    // Carrega os nomes dos produtos
+    if ((i = fopen("nome_produtos.txt", "r")) == NULL) {
+        perror("ERRO abertura entrada\n");
+        return 1;
+    }
+    while (fgets(prod[iprod], sizeof(prod[iprod]), i)) {
+        prod[iprod][strcspn(prod[iprod], "\n")] = 0;
+        iprod++;
+        if (iprod >= 150) break;
+    }
+    fclose(i);
+
+    // Verifica se arquivo de vendas existe
+    struct stat buffer;
+    bool existe_arquivo = stat("venda_produtos.txt", &buffer) == 0;
+
+    if (!existe_arquivo) {
+        compras = fopen("venda_produtos.txt", "w");
+        if (compras == NULL) {
+            perror("ERRO ao criar venda_produtos.txt");
+            return 1;
+        }
+
+        srand(time(NULL));
+        if (argc > 1)
+            quant = atoi(argv[1]);
+
+        while (cont < quant) {
+            int dia = 0, mes = 0, ano = 0;
+            float preco = (rand() % 9999) / 100.0;
+            double quantidade = (rand() % 999) / 100.0 + 1;
+
+            verifica_data(&dia, &mes, &ano);
+            cod = rand() % iprod;
+
+            Produto produto;
+            produto.data.dia = dia;
+            produto.data.mes = mes;
+            produto.data.ano = ano;
+            produto.codigo = cod;
+            produto.nome = (char *)malloc(strlen(prod[cod]) + 1);
+            if (produto.nome == NULL) {
+                printf("Erro ao alocar memÃ³ria para o nome do produto!\n");
+                exit(1);
+            }
+            strcpy(produto.nome, prod[cod]);
+            produto.quant = quantidade;
+            produto.preco = preco;
+
+            node = inserir(node, &produto);
+
+            sprintf(linha, "%02d/%02d/%04d;\t %3d;\t %s; %6.0f; %6.2f\n", dia, mes,
+                    ano, cod, prod[cod], quantidade, preco);
+            printf("%s\r", linha);
+            fprintf(compras, "%s", linha);
+
+            cont++;
+        }
+
+        fclose(compras);
+    }
+
+    system("cls");
+
+    // LÃª os dados jÃ¡ existentes e monta a Ã¡rvore
+    compras = fopen("venda_produtos.txt", "r");
+    if (compras == NULL) {
+        perror("ERRO ao abrir venda_produtos.txt");
+        return 1;
+    }
+
+    // Recria a Ã¡rvore a partir do arquivo
+    while (fgets(linha, sizeof(linha), compras)) {
+        int dia, mes, ano, codigo;
+        float preco, quantidade;
+        char nome[50];
+
+        sscanf(linha, "%d/%d/%d; %d; %[^;]; %f; %f",
+               &dia, &mes, &ano, &codigo, nome, &quantidade, &preco);
+
+        Produto produto;
+        produto.data.dia = dia;
+        produto.data.mes = mes;
+        produto.data.ano = ano;
+        produto.codigo = codigo;
+        produto.nome = (char *)malloc(strlen(nome) + 1);
+        strcpy(produto.nome, nome);
+        produto.quant = quantidade;
+        produto.preco = preco;
+
+        node = inserir(node, &produto);
+    }
+
+    rewind(compras); // Volta ao inÃ­cio para uso no menu
+    menu(prod, iprod, compras, node);
+
+    liberar(node);
+    fclose(compras);
+}
+
+void verifica_data(int* dia, int* mes, int* ano)
+{
 
     int dias_mes[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
 
@@ -18,100 +184,67 @@ void verifica_data(int* dia, int* mes, int* ano) {
     *mes = rand()%12 + 1;
     *dia = rand()%dias_mes[*mes -1] + 1;
 
-    if(*mes == 2 && ((*ano % 4 == 0 && *ano %100 != 0) || (*ano %400 == 0))) {
+    if(*mes == 2 && (((*ano % 4 == 0) && (*ano %100 != 0)) || (*ano %400 == 0)))
+    {
         *dia = rand()%29 +1;
     }
 }
 
-void visualizar_produtos(char prod[][50], int total) {
+void visualizar_produtos(char prod[][50], int total)
+{
 
     system("cls");
     printf("\t\tLISTAGEM DE PRODUTOS\n");
     printf("________________________________________________\n");
-    for(int i = 0; i < total; i++) {
+    printf("\n");
+    for(int i = 0; i < total; i++)
+    {
         printf("%s\n", prod[i]);
     }
 }
 
-void visualizar_vendas(FILE* compras) {
-    char linha[256];
-
-    printf("\n\n\t\tLISTA DE COMPRAS\n");
-    printf("_______________________________________________________________________\n");
-
-    if(compras != NULL) {
-        rewind(compras);
-        while(fgets(linha, sizeof(linha), compras)) {
-            printf("%s", linha);
-        }
-    }
-}
-
-typedef struct Data {
-    int dia;
-    int mes;
-    int ano;
-} Data;
-
-typedef struct Produto {
-    Data data;
-    char* nome;
-    int codigo;
-    float preco;
-    int vendas;
-    int quant;
-    Produto* prox;
-} Produto;
-
-typedef struct Raiz {
-    Produto produto;
-    int altura;
-    Raiz* esquerda;
-    Raiz* direita;
-} Raiz;
-
-int altura(Raiz* node) {
-    if(node == NULL) {
+int altura(Raiz* node)
+{
+    if(node == NULL)
+    {
         return 0;
     }
     return node->altura;
 }
 
-int altura_maxima(int a, int b) {
+int altura_maxima(int altura_e, int altura_d)
+{
 
-    if(a > b) {
-        return a;
-    } else {
-        return b;
+    if(altura_e > altura_d)
+    {
+        return altura_e;
+    }
+    else
+    {
+        return altura_d;
     }
 }
 
-
-Raiz* criar_raiz(char* nome,int dia, int mes, int ano, int cod,int quant,float preco ) {
+Raiz* criar_raiz(Produto* prod)
+{
 
     Raiz* node = (Raiz*)malloc(sizeof(Raiz));
 
-    if(node == NULL) {
-        printf("Erro ao alocar No!!");
+    if(node == NULL)
+    {
+        printf("Erro ao alocar");
         return NULL;
     }
-
-    node->produto.nome = strdup(nome); //copia o nome
-    node->produto.data.dia = dia;
-    node->produto.data.mes = mes;
-    node->produto.data.ano = ano;
-    node->produto.codigo = cod;
-    node->produto.quant = quant;
-    node->produto.preco = preco;
-
-    node->esquerda = NULL;
-    node->direita = NULL;
+    node->produto = *prod;
+    node->esquerda = (Raiz*)NULL;
+    node->direita = (Raiz*)NULL;
     node->altura = 1;
 
     return node;
 }
 
-int compara_data(int dia, int mes, int ano, int Rdia, int Rmes, int Rano) {
+int compara_data(int dia, int mes, int ano, int Rdia, int Rmes, int Rano)
+{
     if(ano < Rano) return -1;
     if(ano > Rano) return  1;
     if(mes < Rmes) return -1;
@@ -121,95 +254,131 @@ int compara_data(int dia, int mes, int ano, int Rdia, int Rmes, int Rano) {
     return 0; // data igual
 }
 
-int balanceamento(Raiz* node) {
-    if(node == NULL) {
+int balanceamento(Raiz* node)
+{
+    if(node == NULL)
+    {
         return 0;
     }
 
     return altura(node->esquerda) - altura(node->direita);
 }
 
-Raiz* rotacao_direita(Raiz* y) {
+Raiz* rotacao_direita(Raiz* y)
+{
+    if (y == NULL || y->esquerda == NULL)
+        return y; // nada a fazer
+
     Raiz* x = y->esquerda;
     Raiz* T2 = x->direita;
 
-    //rotaciona
     x->direita = y;
     y->esquerda = T2;
 
-    y->altura = altura_maxima(altura(y->esquerda),altura(y->direita))+1;
-    x->altura = altura_maxima(altura(x->esquerda),altura(x->direita))+1;
+    y->altura = altura_maxima(altura(y->esquerda), altura(y->direita)) + 1;
+    x->altura = altura_maxima(altura(x->esquerda), altura(x->direita)) + 1;
 
-    return x; // Novo node
+    return x;
 }
 
-Raiz* rotacao_esquerda(Raiz* x) {
+
+Raiz* rotacao_esquerda(Raiz* x)
+{
+    if (x == NULL || x->direita == NULL)
+        return x;
+
     Raiz* y = x->direita;
     Raiz* T2 = y->esquerda;
 
-    //rotação
     y->esquerda = x;
     x->direita = T2;
 
-    //altura
-    x->altura = altura_maxima(altura(x->esquerda),altura(x->direita))+1;
-    y->altura = altura_maxima(altura(y->esquerda),altura(y->direita))+1;
+    x->altura = altura_maxima(altura(x->esquerda), altura(x->direita)) + 1;
+    y->altura = altura_maxima(altura(y->esquerda), altura(y->direita)) + 1;
 
     return y;
 }
 
-Raiz* inserir(Raiz* node, char* nome, int dia, int mes, int ano, int cod,int quant,float preco) {
 
-    if (node == NULL) {
-        return criar_raiz(nome, dia, mes, ano, cod, quant, preco);
+Raiz* inserir(Raiz* node, Produto* prod)
+{
+
+    if (node == NULL)
+    {
+        return criar_raiz(prod);
     }
 
-    // Comparar as datas
-    int data_comp = compara_data(dia, mes, ano, node->produto.data.dia, node->produto.data.mes, node->produto.data.ano);
+    // Comparar as datas usando a funÃ§Ã£o auxiliar
+    int data_comp = compara_data(prod->data.dia, prod->data.mes, prod->data.ano, node->produto.data.dia, node->produto.data.mes, node->produto.data.ano);
 
-    if (data_comp < 0) {
-        node->esquerda = inserir(node->esquerda, nome, dia, mes, ano, cod, quant, preco);
-    } else if (data_comp > 0) {
-        node->direita = inserir(node->direita, nome, dia, mes, ano, cod, quant, preco);
-    } else {
-
-        if (cod < node->produto.codigo) {
-            node->esquerda = inserir(node->esquerda, nome, dia, mes, ano, cod, quant, preco);
-        } else if (cod > node->produto.codigo) {
-            node->direita = inserir(node->direita, nome, dia, mes, ano, cod, quant, preco);
-        } else {
-            //se data e codigo for igual soma a quantidade
-            node->produto.quant += quant;
+    if (data_comp < 0)
+    {
+        node->esquerda = inserir(node->esquerda, prod);
+    }
+    else if (data_comp > 0)
+    {
+        node->direita = inserir(node->direita, prod);
+    }
+    else
+    {
+        // Se data Ã© igual, comparar pelos cÃ³digos
+        if (prod->codigo < node->produto.codigo)
+        {
+            node->esquerda = inserir(node->esquerda, prod);
+        }
+        else if (prod->codigo > node->produto.codigo)
+        {
+            node->direita = inserir(node->direita, prod);
+        }
+        else
+        {
+            // Se data e cÃ³digo sÃ£o iguais, somar a quantidade
+            node->produto.quant += prod->quant;
             return node;
         }
     }
 
-    // Atualiza a altura do nó
+    // Atualiza a altura do nÃ³ apÃ³s a inserÃ§Ã£o
     node->altura = 1 + altura_maxima(altura(node->esquerda), altura(node->direita));
 
-    // Balanceamento da árvore
+    // Verifica o balanceamento da Ã¡rvore
     int balance = balanceamento(node);
 
-    // Correção do balanceamento
-
-    // Rotação simples à direita
-    if (balance > 1 && compara_data(dia, mes, ano, node->esquerda->produto.data.dia, node->esquerda->produto.data.mes, node->esquerda->produto.data.ano) < 0) {
+    // RotaÃ§Ãµes para balanceamento
+    if (balance > 1 && node->esquerda != NULL &&
+            compara_data(prod->data.dia, prod->data.mes, prod->data.ano,
+                         node->esquerda->produto.data.dia,
+                         node->esquerda->produto.data.mes,
+                         node->esquerda->produto.data.ano) < 0)
+    {
         return rotacao_direita(node);
     }
 
-    // Rotação simples à esquerda
-    if (balance < -1 && compara_data(dia, mes, ano, node->direita->produto.data.dia, node->direita->produto.data.mes, node->direita->produto.data.ano) > 0) {
+    if (balance < -1 && node->direita != NULL &&
+            compara_data(prod->data.dia, prod->data.mes, prod->data.ano,
+                         node->direita->produto.data.dia,
+                         node->direita->produto.data.mes,
+                         node->direita->produto.data.ano) > 0)
+    {
         return rotacao_esquerda(node);
     }
 
-    // Rotação dupla à direita
-    if (balance > 1 && compara_data(dia, mes, ano, node->esquerda->produto.data.dia, node->esquerda->produto.data.mes, node->esquerda->produto.data.ano) > 0) {
+    if (balance > 1 && node->esquerda != NULL &&
+            compara_data(prod->data.dia, prod->data.mes, prod->data.ano,
+                         node->esquerda->produto.data.dia,
+                         node->esquerda->produto.data.mes,
+                         node->esquerda->produto.data.ano) > 0)
+    {
         node->esquerda = rotacao_esquerda(node->esquerda);
         return rotacao_direita(node);
     }
 
-    // Rotação dupla à esquerda
-    if (balance < -1 && compara_data(dia, mes, ano, node->direita->produto.data.dia, node->direita->produto.data.mes, node->direita->produto.data.ano) < 0) {
+    if (balance < -1 && node->direita != NULL &&
+            compara_data(prod->data.dia, prod->data.mes, prod->data.ano,
+                         node->direita->produto.data.dia,
+                         node->direita->produto.data.mes,
+                         node->direita->produto.data.ano) < 0)
+    {
         node->direita = rotacao_direita(node->direita);
         return rotacao_esquerda(node);
     }
@@ -217,23 +386,44 @@ Raiz* inserir(Raiz* node, char* nome, int dia, int mes, int ano, int cod,int qua
     return node;
 }
 
-typedef struct Lista {
-    Raiz* produto;
-    struct Lista* proximo;
-} Lista;
+void visualizar_vendas(Raiz* node, int* ultimo_ano)
+{
+    if(node != NULL)
+    {
+        visualizar_vendas(node->esquerda, ultimo_ano);
+        if(node->produto.data.ano != *ultimo_ano)
+        {
+            *ultimo_ano = node->produto.data.ano;
+            printf("\n");
+            printf("________________________________________________\n\n");
+            printf("------------------ ANO %d --------------------\n", *ultimo_ano);
+        }
+        printf("________________________________________________\n");
+        printf("\n");
+        printf("\tDATA: %d/%d/%d\n", node->produto.data.dia, node->produto.data.mes, node->produto.data.ano);
+        printf("\tNOME: %s\n", node->produto.nome);
+        printf("\tCODIGO: %d\n", node->produto.codigo);
+        printf("\tPREÃ‡O: %.2f\n", node->produto.preco);
+        printf("\tQUANTIDADE: %d\n", node->produto.quant);
 
-// Função de busca para retornar uma lista de produtos com a mesma data
-Lista* buscar_produto(Raiz* node, int dia, int mes, int ano, int* vendas) {
+        visualizar_vendas(node->direita, ultimo_ano);
+    }
+}
 
-    if (node == NULL) {
+Lista* buscar_produto(Raiz* node, int dia, int mes, int ano, int* vendas)
+{
+
+    if (node == NULL)
+    {
         return NULL;
     }
 
     int comparacao = compara_data(dia, mes, ano, node->produto.data.dia, node->produto.data.mes, node->produto.data.ano);
     Lista* lista_resultados = NULL;
 
-    // verifica se a data é igual para adicinar a lista
-    if (comparacao == 0) {
+    // verifica se a data Ã© igual para adicinar a lista
+    if (comparacao == 0)
+    {
         Lista* novo_produto = (Lista*) malloc(sizeof(Lista));
         novo_produto->produto = node;
         novo_produto->proximo = lista_resultados;
@@ -243,12 +433,15 @@ Lista* buscar_produto(Raiz* node, int dia, int mes, int ano, int* vendas) {
     }
 
     // Procura os filhos
-    if (comparacao <= 0) {
+    if (comparacao <= 0)
+    {
         Lista* esquerda_resultados = buscar_produto(node->esquerda, dia, mes, ano, vendas);
-        if (esquerda_resultados) {
+        if (esquerda_resultados)
+        {
 
             Lista* temp = esquerda_resultados;
-            while (temp->proximo) {
+            while (temp->proximo)
+            {
                 temp = temp->proximo;
             }
             temp->proximo = lista_resultados;
@@ -256,11 +449,14 @@ Lista* buscar_produto(Raiz* node, int dia, int mes, int ano, int* vendas) {
         }
     }
 
-    if (comparacao >= 0) {
+    if (comparacao >= 0)
+    {
         Lista* direita_resultados = buscar_produto(node->direita, dia, mes, ano, vendas);
-        if (direita_resultados) {
+        if (direita_resultados)
+        {
             Lista* temp = direita_resultados;
-            while (temp->proximo) {
+            while (temp->proximo)
+            {
                 temp = temp->proximo;
             }
             temp->proximo = lista_resultados;
@@ -271,142 +467,104 @@ Lista* buscar_produto(Raiz* node, int dia, int mes, int ano, int* vendas) {
     return lista_resultados;
 }
 
-void menu(char prod[][50], int iprod,FILE *compras, Raiz* produto) {
-
+void menu(char prod[][50], int iprod, FILE* compras, Raiz* produto)
+{
     int resp;
-    printf("1-Listagem de produtos\n");
-    printf("2-Listagem de vendas\n");
-    printf("3-Pesquisar produtos\n");
-    printf("4-Sair\n");
-    scanf("%d", &resp);
-    getchar();
+    while (1)
+    {
+        printf("\n\n");
+        printf("\t1-Listagem de produtos\n");
+        printf("\t2-Listagem de vendas\n");
+        printf("\t3-Pesquisar produtos\n");
+        printf("\t4-Sair\n");
+        printf("\tR: ");
+        scanf("%d", &resp);
+        getchar();
 
-    switch(resp) {
-    case 1:
-        system("cls");
-        visualizar_produtos(prod, iprod);
-        system("pause");
-        system("cls");
-        menu(prod, iprod, compras, produto);
-        break;
-
-    case 2:
-        system("cls");
-        visualizar_vendas(compras);
-        system("pause");
-        system("cls");
-        menu(prod, iprod, compras, produto);
-        break;
-
-    case 3: {
-        int dia, mes, ano;
-        char data[11];
-        int vendas = 0;
-
-        system("cls");
-        printf("________________________________________________\n");
-        printf("Pesquisar\n");
-        printf("Data: ");
-        fgets(data, sizeof(data), stdin);
-        data[strcspn(data, "\n")] = 0;
-        sscanf(data, "%d %d %d", &dia, &mes, &ano);
-        Lista* encontrados = buscar_produto(produto, dia, mes, ano, &vendas);
-
-        if(encontrados != NULL) {
-            Lista* temp = encontrados;
-            while(temp != NULL) {
-                Raiz* node = encontrados->produto;
-                printf("Nome: %s\n", node->produto.nome);
-                printf("Código: %d\n", node->produto.codigo);
-                printf("Data: %d/%d/%d\n", node->produto.data.dia, node->produto.data.mes, node->produto.data.ano);
-                printf("Preço: %.2f\n", node->produto.preco);
-                printf("Quantidade: %.0f\n", node->produto.quant);
-
-                temp = temp->proximo;
-            }
-            printf("Vendas do dia: %d\n", vendas);
-        } else
+        switch (resp)
         {
-            printf("Produto não encontrado");
+        case 1:
+            system("cls");
+            visualizar_produtos(prod, iprod);
+            printf("________________________________________________\n");
+            system("pause");
+            system("cls");
+            break;
+
+        case 2:
+        {
+            system("cls");
+            int ultimo_ano = -1;
+            visualizar_vendas(produto, &ultimo_ano);
+            printf("________________________________________________\n");
+            system("pause");
+            system("cls");
+            break;
         }
 
-        system("pause");
-        system("cls");
-        menu(prod, iprod, compras, produto);
-    }
-    break;
+        case 3:
+        {
+            int dia, mes, ano;
+            char data[11];
+            int vendas = 0;
 
-    case 4:
-        printf("SAINDO...");
-        exit(0);
-        break;
+            system("cls");
+            printf("Pesquisar por data (dd dd dddd)\n");
+            printf("\n");
+            printf("Data: ");
+            fgets(data, sizeof(data), stdin);
+            data[strcspn(data, "\n")] = 0;
+            sscanf(data, "%d %d %d", &dia, &mes, &ano);
+            Lista* encontrados = buscar_produto(produto, dia, mes, ano, &vendas);
+            printf("________________________________________________\n");
+            if (encontrados != NULL)
+            {
+                Lista* temp = encontrados;
+                while (temp != NULL)
+                {
+                    printf("\n");
+                    Raiz* node = temp->produto;
+                    printf("\tNome: %s\n", node->produto.nome);
+                    printf("\tCÃ³digo: %d\n", node->produto.codigo);
+                    printf("\tData: %d/%d/%d\n", node->produto.data.dia, node->produto.data.mes, node->produto.data.ano);
+                    printf("\tPreÃ§o: %.2f\n", node->produto.preco);
+                    printf("\tQuantidade: %d\n", node->produto.quant);
+                    printf("________________________________________________\n");
+                    temp = temp->proximo;
+                }
+                printf("\n");
+                printf("\tVendas do dia: %d\n", vendas);
+            }
+            else
+            {
+                printf("\tProduto nÃ£o encontrado\n");
+            }
+            printf("________________________________________________\n");
+            system("pause");
+            system("cls");
+            break;
+        }
 
-    default:
-        printf("Opção inválida");
-        system("pause");
-        system("cls");
-        menu(prod, iprod, compras, produto);
-        break;
+        case 4:
+            printf("SAINDO...");
+            exit(0);
+
+        default:
+            printf("OpÃ§Ã£o invÃ¡lida");
+            system("pause");
+            system("cls");
+            break;
+        }
     }
 }
 
-
-int main(int argc, char *argv[]) {
-
-    setlocale(LC_ALL, "portuguese");
-
-    Raiz* produto = NULL;
-
-    FILE *i, *compras;
-    char prod[150][50], d[ 6 ];
-    float v;
-    int cod = 1, iprod=0, cont = 0, quant = QUANT;
-    char linha[ 200 ];
-
-    if( (i = fopen( "nome_produtos.txt", "r") ) == NULL )
-        perror("ERRO abertura entrada\n");
-    if( (compras = fopen( "venda_produtos.txt", "w")) == NULL )
-        perror( "ERRO abertura saida\n");
-
-    while( ! feof( i ) ) {
-        fgets( prod[ iprod ], sizeof(prod), i );
-        prod[ iprod ][ strlen(prod[ iprod ])-1 ] = 0;
-        printf( "%s\r ", prod[ iprod ] );
-        iprod++;
+void liberar(Raiz* node)
+{
+    if (node != NULL)
+    {
+        liberar(node->esquerda);
+        liberar(node->direita);
+        free(node->produto.nome);
+        free(node);
     }
-
-    fclose( i );
-    srand( time( NULL ) );
-
-    if( argc > 1 )
-        quant = atoi( argv[ 1 ] );
-    while( cont < quant ) {
-
-        int dia = 0;
-        int mes = 0;
-        int ano = 0;
-        float preco = (rand()%9999)/100.0;
-        double quantidade = (rand()%999)/100.0 +1;
-
-        verifica_data(&dia, &mes, &ano);
-
-        cod = rand()%iprod;
-
-        produto = inserir(produto,prod[cod], dia, mes, ano,cod, quantidade, preco);
-
-        sprintf( linha, "%02d/%02d/%04d;\t %3d;\t %s; %6.0f; %6.2f\n", dia, mes,
-                 ano, cod, prod[cod],quantidade, preco );
-        printf( "%s\r ", linha );
-        fprintf(compras,"%s", linha );
-        cont++;
-    }
-
-    fclose(compras);
-
-    system("cls");
-    compras = fopen("venda_produtos.txt", "r");
-    menu(prod, iprod, compras, produto);
-
-    fclose( i );
-    fclose( compras );
 }
