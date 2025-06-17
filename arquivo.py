@@ -1,12 +1,14 @@
 import csv
-import os
-import sys
+import os #limpar terminal / pausar terminal
+import sys #fechar programa
 
 def limpar_tela():
     os.system('cls' if os.name == 'nt' else 'clear')
 
+
 def pausar():
     os.system('pause' if os.name == 'nt' else 'read -p "Pressione Enter para continuar..."')
+
 
 class Registro:
     def __init__(self, arquivo_path):
@@ -32,6 +34,7 @@ class Registro:
                 self.dados_jogos.atualizar_maior_players(jogo)
                 self.dados_jogos.atualizar_maior_vendas(jogo)
                 self.dados_jogos.atualizar_menor_vendas(jogo)
+
 
 class DadosJogos:
     def __init__(self):
@@ -64,7 +67,9 @@ class DadosJogos:
         print("4 - Jogo com menor número de vendas")
         print("5 - Pesquisar por data")
         print("6 - Pesquisar por nome do jogo")
-        print("7 - Sair")
+        print("7 - Visualizar Jogos do arquivo")
+        print("8 - Visualizar arquivo completo")
+        print("9 - Sair")
         try:
             valor = int(input("Digite o valor: "))
         except ValueError:
@@ -99,11 +104,15 @@ class DadosJogos:
             nome_jogo = input("Digite o nome do jogo para busca: ")
             self.listar_jogo(nome_jogo)
         elif valor == 7:
+            self.listar_nome_jogo()
+        elif valor == 8:
+            self.listar_arquivo()
+        elif valor == 9:
             print("Saindo...")
             sys.exit()
         else:
             print("Opção inválida ou dados indisponíveis.")
-        
+
         pausar()
         limpar_tela()
         self.menu()
@@ -126,6 +135,21 @@ class DadosJogos:
         if not encontrados:
             print("Nenhum jogo encontrado para essa data.")
 
+    def listar_nome_jogo(self):
+        nomes_exibidos = set()
+        for jogo in self.todos_jogos:
+            if jogo.nome_jogo not in nomes_exibidos:
+                print(jogo.nome_jogo)
+                nomes_exibidos.add(jogo.nome_jogo)
+
+    def listar_arquivo(self):
+        with open('tabela_jogos.csv', 'r') as arquivo:
+            leitor = csv.reader(arquivo)
+            for linha in leitor:
+                print(f"{linha[0]} |\t {linha[1]} |\t {linha[2]} |\t {linha[3]} |\t {linha[4]} |\t {linha[5]} |\t {linha[6]}\n")
+
+
+
 class Jogo:
     def __init__(self, data, nome_jogo, plataforma, player_min, player_max, variacao_preco, vendas):
         self.data = data
@@ -145,6 +169,7 @@ class Jogo:
         print(f"Variação de preço: {self.variacao_preco}")
         print(f"Vendas: {self.vendas}M")
         print("-" * 30)
+
 
 def main():
     registro = Registro('tabela_jogos.csv')
